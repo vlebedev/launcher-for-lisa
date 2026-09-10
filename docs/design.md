@@ -184,6 +184,15 @@ Steps, each idempotent and printed as it runs:
     `~/.local/bin` first in her session PATH (environment.d and uwsm env.d),
     so the pending-migrations notification click and manual calls both go
     through the sudo path. Read-only `--pending` calls bypass sudo.
+    The same sudoers file also grants `omarchy-theme-set-browser-policy` with
+    a six-hex-digit argument, mirroring Omarchy's wheel-only grant, because
+    every theme change calls it and otherwise prompts for a superuser password
+    (seen on her first login, 2026-09-10).
+13. Fcitx5 (learned 2026-09-10): write `conf/wayland.conf` with
+    `Allow Overriding System XKB Settings=False`, a `profile` using
+    `keyboard-ch`, and `conf/notifications.conf` hiding
+    `wayland-diagnose-other`, so the "Wayland Diagnose" notification never
+    appears in her session.
 Everything that runs as `lisa` uses `sudo -u lisa -H` (or `runuser`).
 Files under `/home/lisa` must end up owned by `lisa`.
 

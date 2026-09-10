@@ -583,6 +583,66 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 6b. Input method (Fcitx5)
+# ---------------------------------------------------------------------------
+# Omarchy runs fcitx5 in every session (omarchy-fcitx5.service, for XCompose
+# sequences). Its Wayland module defaults to "Allow Overriding System XKB
+# Settings=True" and, on a desktop it cannot push a layout to, raises a
+# "Wayland Diagnose" notification whenever its own layout (keyboard-us by
+# default) differs from the compositor's (ch here). Omarchy's skel only
+# switches that override off for X11 (conf/xcb.conf). Three belt-and-braces
+# settings: turn the override off for Wayland too, give fcitx a profile whose
+# layout already matches, and hide that one notification id.
+
+step "Input method (Fcitx5)"
+
+lisa_dir "$LISA_HOME/.config/fcitx5" 755
+lisa_dir "$LISA_HOME/.config/fcitx5/conf" 755
+
+if lisa_write "$LISA_HOME/.config/fcitx5/conf/wayland.conf" 644 <<'EOF'
+Allow Overriding System XKB Settings=False
+EOF
+then
+  changed "fcitx5: Wayland module no longer tries to override the XKB layout"
+else
+  skipped "fcitx5 wayland.conf up to date"
+fi
+
+if lisa_write "$LISA_HOME/.config/fcitx5/conf/notifications.conf" 644 <<'EOF'
+# Hidden Notifications
+HiddenNotifications=wayland-diagnose-other
+EOF
+then
+  changed "fcitx5: 'Wayland Diagnose' notification hidden"
+else
+  skipped "fcitx5 notifications.conf up to date"
+fi
+
+if [[ -f $LISA_HOME/.config/fcitx5/profile ]]; then
+  skipped "fcitx5 profile exists; left as is (fcitx rewrites it at runtime)"
+elif lisa_write "$LISA_HOME/.config/fcitx5/profile" 644 <<EOF
+[Groups/0]
+# Group Name
+Name=Default
+# Layout
+Default Layout=$KB_LAYOUT
+# Default Input Method
+DefaultIM=keyboard-$KB_LAYOUT
+
+[Groups/0/Items/0]
+# Name
+Name=keyboard-$KB_LAYOUT
+# Layout
+Layout=
+
+[GroupOrder]
+0=Default
+EOF
+then
+  changed "fcitx5 profile: keyboard-$KB_LAYOUT, matching the Hyprland layout"
+fi
+
+# ---------------------------------------------------------------------------
 # 7. SDDM autologin
 # ---------------------------------------------------------------------------
 
@@ -812,6 +872,12 @@ cat >"$sudoers_tmp" <<SUDOERS
 # root-owned wrapper. SETENV allows --preserve-env for the session variables
 # the wrapper needs (WAYLAND_DISPLAY, HYPRLAND_INSTANCE_SIGNATURE).
 $LISA_USER ALL=(root) NOPASSWD:SETENV: $MIGRATE_WRAPPER_DST
+#
+# Omarchy grants wheel a passwordless run of the browser-policy helper that
+# every theme change invokes (/etc/sudoers.d/omarchy-theme-browser); without
+# it, a non-wheel account gets a superuser password prompt on each theme set.
+# Same command, same six-hex-digit argument shape, for $LISA_USER.
+$LISA_USER ALL=(root) NOPASSWD: /usr/bin/omarchy-theme-set-browser-policy [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]
 SUDOERS
 if visudo -cf "$sudoers_tmp" >/dev/null; then
   if [[ -f $MIGRATE_SUDOERS ]] && cmp -s "$sudoers_tmp" "$MIGRATE_SUDOERS" &&

@@ -107,6 +107,18 @@ backup left in there keeps autologin active. Move it back to restore:
 
     sudo mv /etc/sddm-autologin.conf.disabled /etc/sddm.conf.d/autologin.conf
 
+## Things the setup script fixes for a no-sudo account
+
+- **"Wayland Diagnose" notification from Fcitx.** Omarchy runs the Fcitx5
+  input-method daemon in every session. Its Wayland module tries to push its
+  own keyboard layout to the compositor and, failing that on Hyprland, shows
+  a notification. The script turns that override off, gives Fcitx a profile
+  matching the Swiss German layout, and hides that notification id.
+- **Superuser prompt on theme changes.** Every theme change runs
+  `omarchy-theme-set-browser-policy` through sudo. Omarchy grants that to
+  `wheel` only, so a non-wheel account got a password prompt. The script adds
+  the same passwordless grant for `lisa` to `/etc/sudoers.d/lisa-omarchy-migrate`.
+
 ## Known trade-offs
 
 - **Brightness-down key is taken in Lisa's account.** On this Apple keyboard a
