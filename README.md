@@ -68,7 +68,8 @@ If the file is missing an id, the command says so; no repo change is needed.
 The script is idempotent and prints each step: creates user `lisa` (no sudo,
 no extra groups), asks for a password if none, enables the `de_CH.UTF-8`
 locale and sets it as her session language, sets Swiss German keyboard
-layout, sets idle screensaver 10 min / lock 60 min, disables SDDM autologin,
+layout with natural scrolling on trackpad and mouse, sets idle screensaver
+10 min / lock 60 min, disables SDDM autologin,
 clones the repo to `~/.local/share/launcher-for-lisa`, installs the logins
 file, runs `lisa-launcher install` as lisa, and sets up the migration path
 described below. Omarchy finishes provisioning her account on her first

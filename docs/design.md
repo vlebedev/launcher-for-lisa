@@ -145,7 +145,8 @@ Steps, each idempotent and printed as it runs:
    and apps launched by the menu. Write `LANG=de_CH.UTF-8` there.
 5. Keyboard: in `/home/lisa/.config/hypr/input.lua` set `kb_layout = "ch"`
    (Swiss German only) in the form the skel file uses. Check the skel file for
-   the exact table shape.
+   the exact table shape. Same block: `natural_scroll = true` for the mouse
+   and `touchpad.natural_scroll = true` (added 2026-09-10 at the owner's request).
 6. Idle: in `/home/lisa/.config/omarchy/shell.json` set
    `idle.screensaver = 600`, `idle.lock = 3600` (jq in-place).
 7. Remove SDDM autologin: move `/etc/sddm.conf.d/autologin.conf` to

@@ -480,7 +480,7 @@ fi
 # 5. Keyboard layout
 # ---------------------------------------------------------------------------
 
-step "Keyboard layout kb_layout = \"$KB_LAYOUT\""
+step "Keyboard layout kb_layout = \"$KB_LAYOUT\", natural scrolling"
 
 input_lua="$LISA_HOME/.config/hypr/input.lua"
 lisa_dir "$LISA_HOME/.config/hypr" 755
@@ -525,10 +525,15 @@ done
 -- file, and hl.config() overrides just the keys it names.
 -- kb_variant is pinned to "" so a variant inherited from /etc/vconsole.conf
 -- cannot be paired with the "$KB_LAYOUT" layout.
+-- Natural (inverse) scrolling on both the trackpad and an external mouse.
 hl.config({
   input = {
     kb_layout = "$KB_LAYOUT",
     kb_variant = "",
+    natural_scroll = true,
+    touchpad = {
+      natural_scroll = true,
+    },
   },
 })
 EOF
@@ -537,12 +542,12 @@ EOF
 
 if cmp -s "$input_tmp" "$input_lua"; then
   # shellcheck disable=SC2088  # literal ~ is intentional: this is human-facing text
-  skipped "~/.config/hypr/input.lua already sets kb_layout = \"$KB_LAYOUT\""
+  skipped "~/.config/hypr/input.lua already sets kb_layout = \"$KB_LAYOUT\" and natural scrolling"
   rm -f "$input_tmp"
 else
   install -o "$LISA_USER" -g "$LISA_GROUP" -m 644 "$input_tmp" "$input_lua"
   rm -f "$input_tmp"
-  changed "set kb_layout = \"$KB_LAYOUT\" in ~/.config/hypr/input.lua"
+  changed "set kb_layout = \"$KB_LAYOUT\" and natural scrolling in ~/.config/hypr/input.lua (takes effect at her next login or 'hyprctl reload')"
 fi
 
 # ---------------------------------------------------------------------------
