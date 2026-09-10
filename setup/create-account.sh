@@ -175,8 +175,15 @@ readonly TARGET_LOCALE="de_CH.UTF-8"
 readonly KB_LAYOUT="ch"
 readonly IDLE_SCREENSAVER=600
 readonly IDLE_LOCK=3600
-readonly SDDM_AUTOLOGIN="/etc/sddm.conf.d/autologin.conf"
-readonly SDDM_AUTOLOGIN_DISABLED="/etc/sddm.conf.d/autologin.conf.disabled"
+readonly SDDM_CONF_DIR="/etc/sddm.conf.d"
+readonly SDDM_AUTOLOGIN="$SDDM_CONF_DIR/autologin.conf"
+# The backup must live OUTSIDE sddm.conf.d: SDDM loads every regular file in
+# that directory with no name filter (sddm v0.21.0 src/common/ConfigReader.cpp,
+# ConfigBase::load(): dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot)),
+# so an "autologin.conf.disabled" left inside it keeps autologin fully active.
+readonly SDDM_AUTOLOGIN_DISABLED="/etc/sddm-autologin.conf.disabled"
+# Where an earlier version of this script (mistakenly) parked the backup.
+readonly SDDM_AUTOLOGIN_OLD_BACKUP="$SDDM_CONF_DIR/autologin.conf.disabled"
 readonly OMARCHY_MIGRATIONS_DIR="/usr/share/omarchy/migrations"
 readonly MIGRATE_WRAPPER_SRC="$SETUP_DIR/lisa-omarchy-migrate"
 readonly MIGRATE_WRAPPER_DST="/usr/local/sbin/lisa-omarchy-migrate"
@@ -576,20 +583,47 @@ step "SDDM autologin"
 
 autologin_note="nothing to restore (no autologin.conf was present)"
 
-if [[ -f $SDDM_AUTOLOGIN ]]; then
+# Both the real file and a backup mistakenly left inside sddm.conf.d are live
+# config as far as SDDM is concerned (see the SDDM_AUTOLOGIN_DISABLED comment),
+# so both get moved out of the directory.
+moved_any=0
+for live in "$SDDM_AUTOLOGIN" "$SDDM_AUTOLOGIN_OLD_BACKUP"; do
+  [[ -f $live ]] || continue
   target="$SDDM_AUTOLOGIN_DISABLED"
   if [[ -e $target ]]; then
+    if cmp -s "$live" "$target"; then
+      rm -f -- "$live"
+      changed "removed $live (identical backup already at $target)"
+      moved_any=1
+      continue
+    fi
     target="$SDDM_AUTOLOGIN_DISABLED.$(date +%Y%m%d%H%M%S)"
-    warn "$SDDM_AUTOLOGIN_DISABLED already exists; backing up to $target instead"
+    warn "$SDDM_AUTOLOGIN_DISABLED already exists with different content; backing up to $target instead"
   fi
-  mv -- "$SDDM_AUTOLOGIN" "$target"
-  changed "moved $SDDM_AUTOLOGIN -> $target (SDDM will now show the login screen)"
-  autologin_note="sudo mv $target $SDDM_AUTOLOGIN   # then reboot or: systemctl restart sddm"
+  mv -- "$live" "$target"
+  changed "moved $live -> $target (outside sddm.conf.d, so SDDM no longer reads it)"
+  moved_any=1
+done
+
+if ((moved_any)); then
+  autologin_note="sudo mv $SDDM_AUTOLOGIN_DISABLED $SDDM_AUTOLOGIN   # then reboot or: systemctl restart sddm"
 elif [[ -f $SDDM_AUTOLOGIN_DISABLED ]]; then
-  skipped "already disabled ($SDDM_AUTOLOGIN_DISABLED is in place)"
+  skipped "already disabled (backup at $SDDM_AUTOLOGIN_DISABLED)"
   autologin_note="sudo mv $SDDM_AUTOLOGIN_DISABLED $SDDM_AUTOLOGIN   # then reboot or: systemctl restart sddm"
 else
   skipped "no $SDDM_AUTOLOGIN found"
+fi
+
+# Nothing left in the directory may still name an autologin user.
+if [[ -d $SDDM_CONF_DIR ]]; then
+  declare -a autologin_leftovers=()
+  mapfile -t autologin_leftovers < <(grep -lsE '^[[:space:]]*User[[:space:]]*=[[:space:]]*[^[:space:]]' "$SDDM_CONF_DIR"/* 2>/dev/null || true)
+  if ((${#autologin_leftovers[@]})); then
+    warn "these files in $SDDM_CONF_DIR still set an autologin User= and SDDM reads all of them: ${autologin_leftovers[*]}"
+    failed=1
+  else
+    info "no file in $SDDM_CONF_DIR sets an autologin user"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

@@ -149,7 +149,11 @@ Steps, each idempotent and printed as it runs:
 6. Idle: in `/home/lisa/.config/omarchy/shell.json` set
    `idle.screensaver = 600`, `idle.lock = 3600` (jq in-place).
 7. Remove SDDM autologin: move `/etc/sddm.conf.d/autologin.conf` to
-   `/etc/sddm.conf.d/autologin.conf.disabled` if present. Print how to restore.
+   `/etc/sddm-autologin.conf.disabled` if present. Print how to restore.
+   The backup must be outside `sddm.conf.d`: SDDM loads every regular file in
+   that directory with no name filter (learned 2026-09-10 when a `.disabled`
+   backup inside it kept autologin on). The script also migrates a backup
+   left in the old place and warns if any file there still sets `User=`.
 8. As `lisa`: clone `--repo` to `/home/lisa/.local/share/launcher-for-lisa`
    if absent (otherwise `git pull --ff-only`).
 9. Install the logins file to `/home/lisa/.config/lisa-launcher/logins`,
@@ -181,7 +185,8 @@ Files under `/home/lisa` must end up owned by `lisa`.
   her next login, the menu and workspace rules update.
 - Re-login to a site after a session expiry: as lisa, `lisa-launcher login <id>`.
 - New machine: install Omarchy, then run `sudo setup/create-account.sh --logins <file>`.
-- Restore autologin for the owner: move the `.disabled` file back.
+- Restore autologin for the owner: move `/etc/sddm-autologin.conf.disabled`
+  back to `/etc/sddm.conf.d/autologin.conf`.
 
 ## Things deliberately out of scope
 

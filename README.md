@@ -91,9 +91,11 @@ path) or from yours with `sudo /usr/local/sbin/lisa-omarchy-migrate --dry-run`.
 ## Restoring owner autologin
 
 The setup script moves `/etc/sddm.conf.d/autologin.conf` to
-`/etc/sddm.conf.d/autologin.conf.disabled`. Move it back to restore:
+`/etc/sddm-autologin.conf.disabled`, outside the directory. It has to be
+outside: SDDM reads every file in `/etc/sddm.conf.d/` whatever its name, so a
+backup left in there keeps autologin active. Move it back to restore:
 
-    sudo mv /etc/sddm.conf.d/autologin.conf.disabled /etc/sddm.conf.d/autologin.conf
+    sudo mv /etc/sddm-autologin.conf.disabled /etc/sddm.conf.d/autologin.conf
 
 ## Known trade-offs
 
