@@ -154,6 +154,14 @@ Steps, each idempotent and printed as it runs:
    that directory with no name filter (learned 2026-09-10 when a `.disabled`
    backup inside it kept autologin on). The script also migrates a backup
    left in the old place and warns if any file there still sets `User=`.
+   Also install the greeter theme `setup/sddm-theme/omarchy-lisa` to
+   `/usr/share/sddm/themes/omarchy-lisa` and select it via
+   `/etc/sddm.conf.d/99-zz-lisa-theme.conf`. Reason (learned 2026-09-10):
+   Omarchy's stock theme has no user list and always logs in
+   `userModel.lastUser`, so removing autologin alone still lands in the
+   owner's account. The variant keeps Omarchy's look, references Omarchy's
+   image assets by absolute path so theme logo changes still apply, and adds
+   a row of account names switchable with arrows, Tab or a click.
 8. As `lisa`: clone `--repo` to `/home/lisa/.local/share/launcher-for-lisa`
    if absent (otherwise `git pull --ff-only`).
 9. Install the logins file to `/home/lisa/.config/lisa-launcher/logins`,

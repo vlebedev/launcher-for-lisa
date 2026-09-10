@@ -1,0 +1,7 @@
+[SddmGreeterTheme]
+Name=Omarchy Lisa
+Description=Omarchy's terminal-style login theme with a user switcher for multi-account machines
+Author=launcher-for-lisa
+Type=sddm-theme
+Version=1.0
+QtVersion=6

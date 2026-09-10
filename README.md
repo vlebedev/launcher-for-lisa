@@ -88,6 +88,16 @@ and session environment, then re-owns anything root left in `/home/lisa`.
 Check it from her session with `command -v omarchy-migrate` (expect the shim
 path) or from yours with `sudo /usr/local/sbin/lisa-omarchy-migrate --dry-run`.
 
+## The login screen
+
+Omarchy's own SDDM theme is a password box that always logs in the last user;
+it has no way to choose an account. The setup script therefore installs a
+variant, `omarchy-lisa`, to `/usr/share/sddm/themes/omarchy-lisa` and selects
+it with `/etc/sddm.conf.d/99-zz-lisa-theme.conf`. It looks the same but shows
+the account names above the password box. Left/Right, Tab, or a click switch
+the account; Enter logs in. The last user logged in is preselected. Delete
+the drop-in file to return to Omarchy's theme.
+
 ## Restoring owner autologin
 
 The setup script moves `/etc/sddm.conf.d/autologin.conf` to
@@ -117,6 +127,7 @@ backup left in there keeps autologin active. Move it back to restore:
                                         login [<id>] | update [--force] | list | help
     systemd/lisa-launcher-update.*      user timer + oneshot service for self-update
     setup/create-account.sh             one-off root script for a new machine
+    setup/sddm-theme/omarchy-lisa/      SDDM greeter theme with a user switcher
     setup/lisa-omarchy-migrate          root wrapper installed to /usr/local/sbin
     setup/omarchy-migrate-shim          installed as ~/.local/bin/omarchy-migrate
     docs/design.md                      the design contract; docs/idea.txt the origin

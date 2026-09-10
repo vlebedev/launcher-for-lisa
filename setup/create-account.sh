@@ -184,6 +184,13 @@ readonly SDDM_AUTOLOGIN="$SDDM_CONF_DIR/autologin.conf"
 readonly SDDM_AUTOLOGIN_DISABLED="/etc/sddm-autologin.conf.disabled"
 # Where an earlier version of this script (mistakenly) parked the backup.
 readonly SDDM_AUTOLOGIN_OLD_BACKUP="$SDDM_CONF_DIR/autologin.conf.disabled"
+# Omarchy's greeter theme has no user list: it always logs in the last user
+# (default/sddm/omarchy/Main.qml: sddm.login(userModel.lastUser, ...)). A
+# second account needs a switcher, so we ship a variant of that theme and
+# select it with a drop-in that sorts after Omarchy's 99-omarchy-login.conf.
+readonly SDDM_THEME_SRC="$SETUP_DIR/sddm-theme/omarchy-lisa"
+readonly SDDM_THEME_DST="/usr/share/sddm/themes/omarchy-lisa"
+readonly SDDM_THEME_CONF="$SDDM_CONF_DIR/99-zz-lisa-theme.conf"
 readonly OMARCHY_MIGRATIONS_DIR="/usr/share/omarchy/migrations"
 readonly MIGRATE_WRAPPER_SRC="$SETUP_DIR/lisa-omarchy-migrate"
 readonly MIGRATE_WRAPPER_DST="/usr/local/sbin/lisa-omarchy-migrate"
@@ -624,6 +631,49 @@ if [[ -d $SDDM_CONF_DIR ]]; then
   else
     info "no file in $SDDM_CONF_DIR sets an autologin user"
   fi
+fi
+
+# 7b. Greeter theme with a user switcher (see SDDM_THEME_SRC comment).
+[[ -f $SDDM_THEME_SRC/Main.qml ]] || die "missing $SDDM_THEME_SRC/Main.qml (run from a full checkout)"
+install -d -o root -g root -m 0755 "$SDDM_THEME_DST"
+theme_changed=0
+for asset in Main.qml metadata.desktop theme.conf; do
+  src="$SDDM_THEME_SRC/$asset"
+  dst="$SDDM_THEME_DST/$asset"
+  [[ -f $src ]] || die "missing $src"
+  if [[ -f $dst ]] && cmp -s "$src" "$dst" && [[ $(stat -c '%U:%G:%a' "$dst") == "root:root:644" ]]; then
+    continue
+  fi
+  install -o root -g root -m 0644 "$src" "$dst"
+  theme_changed=1
+done
+if ((theme_changed)); then
+  changed "installed greeter theme to $SDDM_THEME_DST"
+else
+  skipped "greeter theme at $SDDM_THEME_DST up to date"
+fi
+
+theme_conf_tmp="$(mktemp)"
+cat >"$theme_conf_tmp" <<EOF
+# Installed by launcher-for-lisa setup/create-account.sh.
+# Selects the Omarchy-styled greeter that adds a user switcher. Remove this
+# file (and reboot or restart sddm) to return to Omarchy's own theme.
+[Theme]
+Current=omarchy-lisa
+EOF
+if [[ -f $SDDM_THEME_CONF ]] && cmp -s "$theme_conf_tmp" "$SDDM_THEME_CONF"; then
+  skipped "$SDDM_THEME_CONF up to date"
+else
+  install -o root -g root -m 0644 "$theme_conf_tmp" "$SDDM_THEME_CONF"
+  changed "wrote $SDDM_THEME_CONF (Current=omarchy-lisa)"
+fi
+rm -f "$theme_conf_tmp"
+
+# The drop-in must sort after every other file that sets [Theme] Current=.
+last_theme_file="$(grep -lsE '^[[:space:]]*Current[[:space:]]*=' "$SDDM_CONF_DIR"/* 2>/dev/null | sort | tail -n1 || true)"
+if [[ -n $last_theme_file && $last_theme_file != "$SDDM_THEME_CONF" ]]; then
+  warn "$last_theme_file sorts after $SDDM_THEME_CONF and also sets a theme; SDDM will use that one instead"
+  failed=1
 fi
 
 # ---------------------------------------------------------------------------
