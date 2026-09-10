@@ -1,0 +1,14 @@
+[Unit]
+Description=Check hourly for Lisa launcher updates
+Documentation=https://github.com/vlebedev/launcher-for-lisa
+
+[Timer]
+# The user manager starts at login, so this fires shortly after each login
+# and then once an hour for as long as she stays logged in.
+OnStartupSec=2min
+OnUnitActiveSec=1h
+Persistent=false
+Unit=lisa-launcher-update.service
+
+[Install]
+WantedBy=timers.target

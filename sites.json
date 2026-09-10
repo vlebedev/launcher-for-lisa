@@ -1,0 +1,7 @@
+[
+  {"id": "klett", "label": "Klett", "glyph": "", "url": "https://www.meinklett.ch", "workspace": 2},
+  {"id": "anton", "label": "Anton", "glyph": "󰎷", "url": "https://anton.app", "workspace": 3},
+  {"id": "antolin", "label": "Antolin", "glyph": "󱓷", "url": "https://antolin.westermann.de", "workspace": 4},
+  {"id": "weitblick", "label": "Weitblick", "glyph": "󰭛", "url": "https://www.weitblick1-digital.ch", "workspace": 5},
+  {"id": "lmvz", "label": "LMVZ", "glyph": "󰌜", "url": "https://digital.lmvz.ch", "workspace": 6}
+]

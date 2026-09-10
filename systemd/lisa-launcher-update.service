@@ -1,0 +1,8 @@
+[Unit]
+Description=Update Lisa's launcher from its git repo and reapply the config
+Documentation=https://github.com/vlebedev/launcher-for-lisa
+
+[Service]
+Type=oneshot
+# Absolute path on purpose: this runs before any shell has put ~/.local/bin on PATH.
+ExecStart=%h/.local/share/launcher-for-lisa/bin/lisa-launcher update
