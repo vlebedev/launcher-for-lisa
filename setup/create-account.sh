@@ -141,7 +141,31 @@
 #    DBUS_SESSION_BUS_ADDRESS explicitly unset, so it cannot accidentally reach
 #    root's session bus.
 #
+# 7. Omarchy migrations for a no-sudo account (step 12)
+#
+#    After the owner updates Omarchy, new migrations become pending for every
+#    user. They are bash scripts that call `sudo` through an `as_root` helper
+#    (`if (( EUID == 0 )); then "$@"; else sudo "$@"; fi`, e.g.
+#    migrations/1782002156.sh:4-9), so run as lisa they abort at the first
+#    system change; run as root they work. The chosen design (option 3 in the
+#    project notes): lisa may run exactly one root script without a password,
+#    /usr/local/sbin/lisa-omarchy-migrate, which executes
+#    /usr/bin/omarchy-migrate as root with HER home and session environment and
+#    then re-owns anything root left in /home/lisa. A shim named
+#    `omarchy-migrate` in ~/.local/bin routes both the "Pending Omarchy
+#    Migrations" notification click
+#    (/usr/share/omarchy/bin/omarchy-migrate-notify:48 runs `omarchy-migrate` in
+#    a floating terminal) and manual calls through that sudo path. For the shim
+#    to win, ~/.local/bin must come FIRST in her PATH; Omarchy's
+#    default/bash/env-bootstrap:37-41 only appends it, so this script prepends
+#    it via ~/.config/environment.d (systemd user manager, inherited by
+#    omarchy-shell and every uwsm-app child) and ~/.config/uwsm/env.d.
+#    /etc/profile (append_path) keeps an existing PATH order.
+#
 set -euo pipefail
+
+SETUP_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+readonly SETUP_DIR
 
 readonly LISA_USER="lisa"
 readonly LISA_GECOS="Elizaveta"
@@ -154,6 +178,10 @@ readonly IDLE_LOCK=3600
 readonly SDDM_AUTOLOGIN="/etc/sddm.conf.d/autologin.conf"
 readonly SDDM_AUTOLOGIN_DISABLED="/etc/sddm.conf.d/autologin.conf.disabled"
 readonly OMARCHY_MIGRATIONS_DIR="/usr/share/omarchy/migrations"
+readonly MIGRATE_WRAPPER_SRC="$SETUP_DIR/lisa-omarchy-migrate"
+readonly MIGRATE_WRAPPER_DST="/usr/local/sbin/lisa-omarchy-migrate"
+readonly MIGRATE_SHIM_SRC="$SETUP_DIR/omarchy-migrate-shim"
+readonly MIGRATE_SUDOERS="/etc/sudoers.d/lisa-omarchy-migrate"
 
 readonly BLOCK_BEGIN="-- >>> launcher-for-lisa (managed) — keyboard layout"
 readonly BLOCK_END="-- <<< launcher-for-lisa (managed)"
@@ -251,7 +279,7 @@ fi
 [[ -f $logins_src ]] || die "logins file not found: $logins_src"
 [[ -r $logins_src ]] || die "logins file not readable: $logins_src"
 
-for tool in useradd passwd getent install jq git locale locale-gen sudo; do
+for tool in useradd passwd getent install jq git locale locale-gen sudo visudo; do
   command -v "$tool" >/dev/null 2>&1 || die "required tool missing: $tool"
 done
 
@@ -673,6 +701,97 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 12. Omarchy migrations via sudo  (see header note 7)
+# ---------------------------------------------------------------------------
+
+step "Omarchy migrations for a no-sudo account"
+
+[[ -f $MIGRATE_WRAPPER_SRC ]] || die "missing $MIGRATE_WRAPPER_SRC (run from a full checkout)"
+[[ -f $MIGRATE_SHIM_SRC ]] || die "missing $MIGRATE_SHIM_SRC (run from a full checkout)"
+bash -n "$MIGRATE_WRAPPER_SRC" || die "$MIGRATE_WRAPPER_SRC does not parse"
+bash -n "$MIGRATE_SHIM_SRC" || die "$MIGRATE_SHIM_SRC does not parse"
+
+# 12a. Root-owned wrapper in /usr/local/sbin (outside pacman's tree).
+if [[ -f $MIGRATE_WRAPPER_DST ]] && cmp -s "$MIGRATE_WRAPPER_SRC" "$MIGRATE_WRAPPER_DST" &&
+  [[ $(stat -c '%U:%G:%a' "$MIGRATE_WRAPPER_DST") == "root:root:755" ]]; then
+  skipped "$MIGRATE_WRAPPER_DST up to date"
+else
+  install -o root -g root -m 0755 "$MIGRATE_WRAPPER_SRC" "$MIGRATE_WRAPPER_DST"
+  changed "installed $MIGRATE_WRAPPER_DST (root:root 0755)"
+fi
+
+# 12b. Sudoers rule: only that script, no password, session vars may pass.
+sudoers_tmp="$(mktemp)"
+cat >"$sudoers_tmp" <<SUDOERS
+# Installed by launcher-for-lisa setup/create-account.sh.
+# Lets the no-sudo "$LISA_USER" account apply Omarchy migrations through one
+# root-owned wrapper. SETENV allows --preserve-env for the session variables
+# the wrapper needs (WAYLAND_DISPLAY, HYPRLAND_INSTANCE_SIGNATURE).
+$LISA_USER ALL=(root) NOPASSWD:SETENV: $MIGRATE_WRAPPER_DST
+SUDOERS
+if visudo -cf "$sudoers_tmp" >/dev/null; then
+  if [[ -f $MIGRATE_SUDOERS ]] && cmp -s "$sudoers_tmp" "$MIGRATE_SUDOERS" &&
+    [[ $(stat -c '%U:%G:%a' "$MIGRATE_SUDOERS") == "root:root:440" ]]; then
+    skipped "$MIGRATE_SUDOERS up to date"
+  else
+    install -o root -g root -m 0440 "$sudoers_tmp" "$MIGRATE_SUDOERS"
+    changed "installed $MIGRATE_SUDOERS (visudo-checked)"
+  fi
+else
+  warn "generated sudoers rule failed visudo -c; not installed"
+  failed=1
+fi
+rm -f "$sudoers_tmp"
+
+# 12c. The shim, as ~/.local/bin/omarchy-migrate in her home.
+lisa_dir "$LISA_HOME/.local/bin" 755
+if lisa_write "$LISA_HOME/.local/bin/omarchy-migrate" 755 <"$MIGRATE_SHIM_SRC"; then
+  changed "installed ~/.local/bin/omarchy-migrate shim"
+else
+  # shellcheck disable=SC2088  # literal ~ is intentional: human-facing text
+  skipped "~/.local/bin/omarchy-migrate shim up to date"
+fi
+
+# 12d. ~/.local/bin first in her session PATH, so the shim shadows /usr/bin.
+lisa_dir "$LISA_HOME/.config/environment.d" 755
+# shellcheck disable=SC2016  # $HOME/$PATH are expanded by systemd, not here
+if lisa_write "$LISA_HOME/.config/environment.d/40-lisa-path.conf" 644 <<'EOF'
+# launcher-for-lisa: put ~/.local/bin first so the omarchy-migrate shim wins.
+PATH=$HOME/.local/bin:$PATH
+EOF
+then
+  changed "wrote ~/.config/environment.d/40-lisa-path.conf"
+else
+  # shellcheck disable=SC2088  # literal ~ is intentional: human-facing text
+  skipped "~/.config/environment.d/40-lisa-path.conf up to date"
+fi
+lisa_dir "$LISA_HOME/.config/uwsm" 755
+lisa_dir "$LISA_HOME/.config/uwsm/env.d" 755
+# shellcheck disable=SC2016
+if lisa_write "$LISA_HOME/.config/uwsm/env.d/40-lisa-path" 644 <<'EOF'
+# launcher-for-lisa: put ~/.local/bin first so the omarchy-migrate shim wins.
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) PATH="$HOME/.local/bin:$(printf '%s' "$PATH" | sed "s|:*$HOME/.local/bin:*|:|g; s|^:||; s|:$||")" ;;
+  *) PATH="$HOME/.local/bin:$PATH" ;;
+esac
+export PATH
+EOF
+then
+  changed "wrote ~/.config/uwsm/env.d/40-lisa-path"
+else
+  # shellcheck disable=SC2088  # literal ~ is intentional: human-facing text
+  skipped "~/.config/uwsm/env.d/40-lisa-path up to date"
+fi
+
+# 12e. Prove the wrapper resolves her account (no migrations are run here).
+if "$MIGRATE_WRAPPER_DST" --dry-run >/dev/null 2>&1; then
+  info "wrapper dry-run OK; in her session the notification click or"
+  info "'omarchy-migrate' now applies migrations without a password"
+else
+  warn "$MIGRATE_WRAPPER_DST --dry-run failed; check it by hand"
+fi
+
+# ---------------------------------------------------------------------------
 # Ownership sweep
 # ---------------------------------------------------------------------------
 
@@ -714,6 +833,7 @@ printf '  and log into the Omarchy session. Then check, in her session:\n'
 # shellcheck disable=SC2016  # $LANG is a command for the reader to type, not an expansion
 printf '    echo $LANG                # expect %s\n' "$TARGET_LOCALE"
 printf '    hyprctl getoption input:kb_layout    # expect %s\n' "$KB_LAYOUT"
+printf '    command -v omarchy-migrate           # expect %s/.local/bin/omarchy-migrate\n' "$LISA_HOME"
 printf '    F1 (or brightness-down)   # expect the Lisa menu\n'
 
 if ((failed)); then

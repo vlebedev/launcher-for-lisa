@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+#
+# lisa-omarchy-migrate — run Omarchy migrations for Lisa's account, as root.
+#
+# Installed by setup/create-account.sh to /usr/local/sbin/lisa-omarchy-migrate
+# (root:root 0755) together with /etc/sudoers.d/lisa-omarchy-migrate, which lets
+# the "lisa" account run exactly this script with `sudo -n`, no password.
+#
+# Why this exists: Omarchy's migrations (/usr/share/omarchy/migrations/*.sh)
+# mix user-level edits in $HOME with system changes done through an `as_root`
+# helper that calls `sudo` unless EUID is already 0. Lisa is deliberately not
+# in wheel, so run as herself they would abort at the first sudo. Run as root
+# with HER home and session environment, both halves work: the system parts
+# succeed (or are no-ops, because the owner's own update already applied them)
+# and the user parts land in /home/lisa.
+#
+# What it does:
+#   1. Refuses to run unless root and invoked by lisa (via sudo) or by root.
+#   2. Rebuilds a minimal environment for lisa's session: HOME, USER,
+#      XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS (so `systemctl --user` talks
+#      to HER user manager), WAYLAND_DISPLAY and HYPRLAND_INSTANCE_SIGNATURE
+#      (so `hyprctl` reaches HER compositor). The last two are taken from the
+#      caller's environment when sudo preserved them, otherwise detected from
+#      /run/user/<uid>. PATH deliberately excludes ~/.local/bin, where the
+#      omarchy-migrate shim lives, to avoid recursion.
+#   3. Runs /usr/bin/omarchy-migrate with that environment and forwards its
+#      arguments and exit status.
+#   4. Afterwards re-owns anything under /home/lisa that ended up owned by root
+#      (`chown --from=root`), so her config stays hers.
+#
+#   --dry-run   print the environment and command that would be used, without
+#               running anything. Works as a normal user; useful for checks.
+
+set -euo pipefail
+
+readonly TARGET_USER="lisa"
+readonly REAL_MIGRATE="/usr/bin/omarchy-migrate"
+
+die() {
+  printf 'lisa-omarchy-migrate: %s\n' "$*" >&2
+  exit 1
+}
+
+dry_run=0
+declare -a passthrough=()
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) dry_run=1 ;;
+    *) passthrough+=("$arg") ;;
+  esac
+done
+
+if ((!dry_run)); then
+  ((EUID == 0)) || die "must run as root (the shim calls it through sudo)"
+  case "${SUDO_USER:-root}" in
+    "$TARGET_USER" | root) ;;
+    *) die "may only be invoked by $TARGET_USER or root (SUDO_USER=${SUDO_USER})" ;;
+  esac
+fi
+
+target_entry="$(getent passwd "$TARGET_USER")" || die "user $TARGET_USER does not exist"
+target_uid="$(cut -d: -f3 <<<"$target_entry")"
+target_gid="$(cut -d: -f4 <<<"$target_entry")"
+target_home="$(cut -d: -f6 <<<"$target_entry")"
+runtime_dir="/run/user/$target_uid"
+
+# Session details: prefer what sudo preserved from the caller (SETENV in the
+# sudoers rule allows --preserve-env for these two), fall back to detection.
+wayland_display="${WAYLAND_DISPLAY:-}"
+if [[ -z $wayland_display && -d $runtime_dir ]]; then
+  for sock in "$runtime_dir"/wayland-*; do
+    [[ -S $sock ]] || continue
+    wayland_display="$(basename -- "$sock")"
+    break
+  done
+fi
+
+hypr_signature="${HYPRLAND_INSTANCE_SIGNATURE:-}"
+if [[ -z $hypr_signature && -d $runtime_dir/hypr ]]; then
+  # Several instance dirs can linger after reloads; take the newest one that
+  # still has a live control socket.
+  declare -a hypr_dirs=()
+  mapfile -t hypr_dirs < <(find "$runtime_dir/hypr" -mindepth 1 -maxdepth 1 -type d \
+    -printf '%T@\t%p\n' 2>/dev/null | sort -rn | cut -f2-)
+  for dir in "${hypr_dirs[@]+"${hypr_dirs[@]}"}"; do
+    if [[ -S $dir/.socket.sock ]]; then
+      hypr_signature="$(basename -- "$dir")"
+      break
+    fi
+  done
+fi
+
+declare -a env_args=(
+  "HOME=$target_home"
+  "USER=$TARGET_USER"
+  "LOGNAME=$TARGET_USER"
+  "SHELL=/usr/bin/bash"
+  "PATH=/usr/local/sbin:/usr/local/bin:/usr/bin"
+  "OMARCHY_PATH=/usr/share/omarchy"
+  "TERM=${TERM:-xterm-256color}"
+  "LANG=${LANG:-C.UTF-8}"
+)
+[[ -d $runtime_dir ]] && env_args+=("XDG_RUNTIME_DIR=$runtime_dir")
+[[ -S $runtime_dir/bus ]] && env_args+=("DBUS_SESSION_BUS_ADDRESS=unix:path=$runtime_dir/bus")
+[[ -n $wayland_display ]] && env_args+=("WAYLAND_DISPLAY=$wayland_display")
+[[ -n $hypr_signature ]] && env_args+=("HYPRLAND_INSTANCE_SIGNATURE=$hypr_signature")
+
+if ((dry_run)); then
+  printf 'would run as root for %s (uid %s):\n' "$TARGET_USER" "$target_uid"
+  printf '  env -i \\\n'
+  for kv in "${env_args[@]}"; do printf '    %q \\\n' "$kv"; done
+  printf '    %s' "$REAL_MIGRATE"
+  for a in "${passthrough[@]+"${passthrough[@]}"}"; do printf ' %q' "$a"; done
+  printf '\n  then: chown -R --from=root %s:%s -- %s\n' "$target_uid" "$target_gid" "$target_home"
+  exit 0
+fi
+
+[[ -x $REAL_MIGRATE ]] || die "$REAL_MIGRATE not found"
+
+# Never leave root-owned files in her home, whatever the migrations did.
+reown() {
+  chown -R -h --from=root "$target_uid:$target_gid" -- "$target_home" 2>/dev/null || true
+}
+trap reown EXIT
+
+env -i "${env_args[@]}" "$REAL_MIGRATE" "${passthrough[@]+"${passthrough[@]}"}"

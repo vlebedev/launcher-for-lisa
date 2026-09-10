@@ -70,8 +70,23 @@ no extra groups), asks for a password if none, enables the `de_CH.UTF-8`
 locale and sets it as her session language, sets Swiss German keyboard
 layout, sets idle screensaver 10 min / lock 60 min, disables SDDM autologin,
 clones the repo to `~/.local/share/launcher-for-lisa`, installs the logins
-file, and runs `lisa-launcher install` as lisa. Omarchy finishes provisioning
-her account on her first Hyprland login; test the menu manually after that.
+file, runs `lisa-launcher install` as lisa, and sets up the migration path
+described below. Omarchy finishes provisioning her account on her first
+Hyprland login; test the menu manually after that.
+
+## Omarchy updates and Lisa's account
+
+You update Omarchy from your own account as usual. Afterwards Lisa's session
+shows the standard "Pending Omarchy Migrations" notification. Clicking it, or
+running `omarchy-migrate` in her terminal, applies the migrations even though
+she has no sudo: `~/.local/bin/omarchy-migrate` is a shim that calls
+`/usr/local/sbin/lisa-omarchy-migrate` through a sudoers rule limited to that
+one script. The wrapper runs the real `omarchy-migrate` as root with her home
+and session environment, then re-owns anything root left in `/home/lisa`.
+`omarchy-migrate --pending` stays a plain read-only call.
+
+Check it from her session with `command -v omarchy-migrate` (expect the shim
+path) or from yours with `sudo /usr/local/sbin/lisa-omarchy-migrate --dry-run`.
 
 ## Restoring owner autologin
 
@@ -100,6 +115,8 @@ The setup script moves `/etc/sddm.conf.d/autologin.conf` to
                                         login [<id>] | update [--force] | list | help
     systemd/lisa-launcher-update.*      user timer + oneshot service for self-update
     setup/create-account.sh             one-off root script for a new machine
+    setup/lisa-omarchy-migrate          root wrapper installed to /usr/local/sbin
+    setup/omarchy-migrate-shim          installed as ~/.local/bin/omarchy-migrate
     docs/design.md                      the design contract; docs/idea.txt the origin
     private/                            gitignored, owner's local copy of login links
 

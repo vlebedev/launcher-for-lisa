@@ -160,6 +160,18 @@ Steps, each idempotent and printed as it runs:
     `/usr/bin/omarchy-provision-first-run` and
     `/usr/share/omarchy/install/user/first-run/*.sh`. If any step rewrites a
     file we touch, document it in the script header and work around it.
+12. Omarchy migrations for a no-sudo account (decided 2026-09-10, option 3 of
+    three considered). Migrations call `sudo` via an `as_root` helper that
+    skips sudo when already root. Install `setup/lisa-omarchy-migrate` to
+    `/usr/local/sbin/` (root, 0755) and a sudoers rule
+    `lisa ALL=(root) NOPASSWD:SETENV: /usr/local/sbin/lisa-omarchy-migrate`
+    (visudo-checked, 0440). The wrapper runs `/usr/bin/omarchy-migrate` as root
+    with Lisa's HOME, USER, runtime dir, session bus, Wayland display and
+    Hyprland signature, then re-owns anything root left in her home. Install
+    `setup/omarchy-migrate-shim` as `~/.local/bin/omarchy-migrate` and put
+    `~/.local/bin` first in her session PATH (environment.d and uwsm env.d),
+    so the pending-migrations notification click and manual calls both go
+    through the sudo path. Read-only `--pending` calls bypass sudo.
 Everything that runs as `lisa` uses `sudo -u lisa -H` (or `runuser`).
 Files under `/home/lisa` must end up owned by `lisa`.
 

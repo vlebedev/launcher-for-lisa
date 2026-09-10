@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#
+# omarchy-migrate shim for Lisa's account.
+#
+# Installed by setup/create-account.sh as ~/.local/bin/omarchy-migrate in Lisa's
+# home, and her session PATH puts ~/.local/bin first, so both the
+# "Pending Omarchy Migrations" notification (which runs `omarchy-migrate` in a
+# floating terminal) and a manual `omarchy-migrate` resolve here.
+#
+# Read-only queries go straight to the real command. Anything that would apply
+# migrations goes through sudo to /usr/local/sbin/lisa-omarchy-migrate, which
+# runs them as root with Lisa's home and session environment. The sudoers rule
+# installed alongside makes that a no-password call restricted to that script.
+
+set -euo pipefail
+
+case "${1:-}" in
+  --pending | --check | -h | --help)
+    exec /usr/bin/omarchy-migrate "$@"
+    ;;
+esac
+
+exec sudo -n --preserve-env=WAYLAND_DISPLAY,HYPRLAND_INSTANCE_SIGNATURE \
+  /usr/local/sbin/lisa-omarchy-migrate "$@"
