@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Orb setup: the repo is bash + jq; agents lint the scripts with shellcheck.
+set -euo pipefail
+
+step() { printf '==> %s\n' "$*"; }
+
+packages=(jq shellcheck)
+missing=()
+for pkg in "${packages[@]}"; do
+  dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' || missing+=("$pkg")
+done
+
+if ((${#missing[@]})); then
+  sudo_cmd=()
+  [[ $(id -u) -eq 0 ]] || sudo_cmd=(sudo)
+  step "apt-get install ${missing[*]}"
+  time {
+    "${sudo_cmd[@]}" apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive "${sudo_cmd[@]}" apt-get install -y -qq --no-install-recommends "${missing[@]}"
+  }
+else
+  step "system packages present: ${packages[*]}"
+fi
+
+step "tool versions"
+jq --version
+shellcheck --version | sed -n 2p
